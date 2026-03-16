@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# ひらがな · カタカナ — 히라가나 · 가타카나 암기
 
-## Getting Started
+일본어 **히라가나**, **가타카나**, **탁점·반탁점**, **요음(스테가나)** 을 퀴즈로 연습하고 표로 볼 수 있는 웹 앱입니다.
 
-First, run the development server:
+---
+
+## ✨ 기능
+
+| 구분 | 설명 |
+|------|------|
+| **기본 테스트** | 히라가나 / 가타카나 / 둘 다 중 선택 → 10문제, 5지선다 (한글 발음 고르기) |
+| **탁점 · 요음** | 탁점(゛)·반탁점(゜)만 / 요음(ゃゅょ)만 / 둘 다 테스트 |
+| **표 보기** | 기본 50음도 표 + 탁점·요음 표, 한국 발음 표시/숨김 토글 |
+| **결과 저장** | 퀴즈 결과를 일시와 함께 localStorage에 저장 (최근 100개) |
+
+---
+
+## 🛠 기술 스택
+
+- **Next.js 14** (App Router)
+- **TypeScript**
+- **Tailwind CSS**
+- **shadcn/ui** (Button, Card, Table, Checkbox)
+
+---
+
+## 🚀 실행 방법
 
 ```bash
+# 의존성 설치
+npm install
+
+# 개발 서버 실행
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 [http://localhost:3000](http://localhost:3000) 으로 접속합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 프로덕션 빌드
+npm run build
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+# 프로덕션 실행
+npm run start
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 📁 프로젝트 구조
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── page.tsx          # 메인 (테스트/표 보기 진입)
+│   ├── test/              # 퀴즈 페이지 (type=hiragana|katakana|both|dakuten|youon|dakuten-youon)
+│   └── chart/             # 표 보기 (mode=basic|dakuten|youon)
+├── components/ui/         # shadcn 컴포넌트
+├── data/
+│   └── kana.ts            # 히라가나·가타카나·탁점·요음 데이터
+└── lib/
+    ├── storage.ts         # 퀴즈 결과 localStorage
+    └── utils.ts
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 📜 라이선스
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+MIT License
