@@ -6,6 +6,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { VOCAB_COUNT } from "@/data/vocab";
+import { KANJI_COUNT } from "@/data/kanji";
+import { PHRASE_COUNT } from "@/data/phrases";
+import { COMPOSITION_COUNT } from "@/data/compositions";
 
 const linkButtonBase =
   "inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-transparent px-2.5 text-sm font-medium transition-all w-full";
@@ -48,6 +52,54 @@ export default function Home() {
               className={`${linkButtonBase} border-border bg-background hover:bg-muted`}
             >
               둘 다
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="w-full border-slate-200/80 shadow-sm dark:border-slate-800">
+          <CardHeader>
+            <CardTitle>단어 · 한자 · 회화 학습</CardTitle>
+            <CardDescription>
+              쉬운 단어부터 어려운 단어까지. 카드로 익히고, 학습 완료한 것만 랜덤으로
+              시험 보세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Link
+              href="/vocab"
+              className={`${linkButtonBase} bg-primary text-primary-foreground hover:opacity-90`}
+            >
+              단어 학습 ({VOCAB_COUNT}개)
+            </Link>
+            <Link
+              href="/kanji"
+              className={`${linkButtonBase} bg-secondary text-secondary-foreground hover:opacity-90`}
+            >
+              한자 학습 ({KANJI_COUNT}자)
+            </Link>
+            <Link
+              href="/phrases"
+              className={`${linkButtonBase} border-border bg-background hover:bg-muted`}
+            >
+              일상 회화 문장 ({PHRASE_COUNT}개)
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="w-full border-slate-200/80 shadow-sm dark:border-slate-800">
+          <CardHeader>
+            <CardTitle>문장 써보기 (작문)</CardTitle>
+            <CardDescription>
+              한국어 문장을 일본어로 직접 써보고, 정답(베스트 + 다른 정답)을 본 뒤 스스로
+              채점하세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/compose"
+              className={`${linkButtonBase} bg-primary text-primary-foreground hover:opacity-90`}
+            >
+              작문 연습 ({COMPOSITION_COUNT}문장)
             </Link>
           </CardContent>
         </Card>
