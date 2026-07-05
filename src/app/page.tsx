@@ -10,6 +10,7 @@ import { VOCAB_COUNT } from "@/data/vocab";
 import { KANJI_COUNT } from "@/data/kanji";
 import { PHRASE_COUNT } from "@/data/phrases";
 import { COMPOSITION_COUNT } from "@/data/compositions";
+import TodayReviewCard from "@/components/study/TodayReviewCard";
 
 const linkButtonBase =
   "inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-transparent px-2.5 text-sm font-medium transition-all w-full";
@@ -26,6 +27,8 @@ export default function Home() {
             일본어 문자 암기 & 퀴즈
           </p>
         </header>
+
+        <TodayReviewCard />
 
         <Card className="w-full border-slate-200/80 shadow-sm dark:border-slate-800">
           <CardHeader>

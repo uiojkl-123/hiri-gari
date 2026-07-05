@@ -12,11 +12,31 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { STUDY_LEVEL_LABEL, STUDY_LEVELS, type StudyLevel } from "@/data/vocab";
+import { type DeckId } from "@/lib/progress";
 import {
-  getLearnedIds,
-  toggleLearned,
-  type DeckId,
-} from "@/lib/progress";
+  GRADE_LABEL,
+  GRADE_ORDER,
+  newCard,
+  previewInterval,
+  type CardProgress,
+  type Grade,
+} from "@/lib/srs";
+import { gradeCard, getAllProgress } from "@/lib/srs-store";
+import { DECK_TO_TYPE, cardKey } from "@/lib/cards";
+
+const GRADE_STYLE: Record<Grade, string> = {
+  again: "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+  hard: "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  good: "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
+  easy: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+};
+
+const STATE_LABEL: Record<CardProgress["state"], string> = {
+  new: "새 카드",
+  learning: "학습 중",
+  review: "복습 중",
+  mastered: "숙달",
+};
 
 export interface StudyItem {
   id: string;
@@ -40,10 +60,11 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
   const [category, setCategory] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [hideMeaning, setHideMeaning] = useState(false);
-  const [learned, setLearned] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<Record<string, CardProgress>>({});
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
-    setLearned(getLearnedIds(deck));
+    setProgress(getAllProgress());
   }, [deck]);
 
   const categories = useMemo(() => {
@@ -69,18 +90,14 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
 
   const total = filtered.length;
   const current = filtered[index];
-  const learnedInFilter = filtered.filter((it) => learned.has(it.id)).length;
 
-  const handleToggle = () => {
-    if (!current) return;
-    const nowLearned = toggleLearned(deck, current.id);
-    setLearned((prev) => {
-      const next = new Set(prev);
-      if (nowLearned) next.add(current.id);
-      else next.delete(current.id);
-      return next;
-    });
-  };
+  const progressFor = (id: string): CardProgress | undefined => progress[cardKey(deck, id)];
+  const studiedInFilter = filtered.filter((it) => progressFor(it.id)).length;
+  const studiedTotal = items.filter((it) => progressFor(it.id)).length;
+
+  const currentProgress = current
+    ? progressFor(current.id) ?? newCard(cardKey(deck, current.id), DECK_TO_TYPE[deck], now)
+    : null;
 
   const go = (delta: number) => {
     setIndex((i) => {
@@ -89,9 +106,16 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
       if (next >= total) return total - 1;
       return next;
     });
+    setHideMeaning(false);
   };
 
-  const isLearnedNow = current ? learned.has(current.id) : false;
+  const handleGrade = (grade: Grade) => {
+    if (!current) return;
+    const updated = gradeCard(deck, current.id, grade);
+    setProgress((prev) => ({ ...prev, [updated.id]: updated }));
+    // 채점하면 자동으로 다음 카드로 (마지막이면 그대로)
+    if (index < total - 1) go(1);
+  };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-6 py-10 dark:from-slate-950 dark:to-slate-900">
@@ -111,7 +135,7 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
             {title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            전체 {items.length}개 · 학습 완료 {learned.size}개
+            전체 {items.length}개 · 학습 시작 {studiedTotal}개
           </p>
         </header>
 
@@ -154,7 +178,7 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
               <span>
                 {index + 1} / {total}
               </span>
-              <span>이 조건 학습 완료 {learnedInFilter}개</span>
+              <span>이 조건 학습 시작 {studiedInFilter}개</span>
             </div>
 
             <Card className="border-slate-200/80 shadow-sm dark:border-slate-800">
@@ -196,23 +220,46 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
                   </ul>
                 )}
 
-                {isLearnedNow && (
-                  <p className="text-center text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                    ✓ 학습 완료됨
+                {currentProgress && progressFor(current.id) && (
+                  <p className="text-center text-xs font-medium text-muted-foreground">
+                    {STATE_LABEL[currentProgress.state]}
+                    {currentProgress.isLeech && " · ⚠ 약점"}
+                    {currentProgress.lastGrade &&
+                      ` · 지난 채점: ${GRADE_LABEL[currentProgress.lastGrade]}`}
                   </p>
                 )}
 
-                <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex justify-center pt-1">
                   <Button variant="ghost" size="sm" onClick={() => setHideMeaning((v) => !v)}>
-                    {hideMeaning ? "뜻 보이기" : "뜻 가리기"}
+                    {hideMeaning ? "뜻 보이기" : "뜻 가리기 (스스로 테스트)"}
                   </Button>
-                  <Button
-                    variant={isLearnedNow ? "outline" : "default"}
-                    size="sm"
-                    onClick={handleToggle}
-                  >
-                    {isLearnedNow ? "학습 완료 해제" : "학습 완료 ✓"}
-                  </Button>
+                </div>
+
+                {/* 4버튼 자가채점 → SRS 등록 */}
+                <div>
+                  <p className="mb-1.5 text-center text-sm text-muted-foreground">
+                    떠올린 만큼 스스로 채점하면 복습 일정이 잡혀요
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {GRADE_ORDER.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => handleGrade(g)}
+                        className={cn(
+                          "flex flex-col items-center gap-0.5 rounded-lg border px-1 py-2 text-sm font-medium transition",
+                          GRADE_STYLE[g]
+                        )}
+                      >
+                        <span>{GRADE_LABEL[g]}</span>
+                        {currentProgress && (
+                          <span className="text-[10px] opacity-70">
+                            {previewInterval(currentProgress, g, now)}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex gap-3">
