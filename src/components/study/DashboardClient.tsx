@@ -70,8 +70,8 @@ export default function DashboardClient() {
   const maxForecast = Math.max(1, ...stats.forecast);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-6 py-10 dark:from-slate-950 dark:to-slate-900">
-      <div className="mx-auto max-w-lg space-y-4">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-4 py-10 dark:from-slate-950 dark:to-slate-900 sm:px-6">
+      <div className="mx-auto max-w-2xl space-y-4">
         <div className="flex items-center justify-between">
           <Link href="/" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
             ← 메인

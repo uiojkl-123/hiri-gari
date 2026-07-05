@@ -269,7 +269,7 @@ export default function ReviewClient({ deck, mode = "daily", title }: ReviewClie
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-6 py-10 dark:from-slate-950 dark:to-slate-900">
-      <div className="mx-auto max-w-lg">
+      <div className="mx-auto max-w-xl">
         <div className="mb-4 flex items-center justify-between">
           <Link href="/" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
             ← 메인

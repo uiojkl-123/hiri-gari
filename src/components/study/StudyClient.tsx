@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SlidersHorizontal, LayoutGrid, List, X, RotateCcw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -25,13 +25,12 @@ import {
 } from "@/lib/srs";
 import { gradeCard, getAllProgress } from "@/lib/srs-store";
 import { DECK_TO_TYPE, cardKey } from "@/lib/cards";
-
-const GRADE_STYLE: Record<Grade, string> = {
-  again: "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
-  hard: "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
-  good: "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
-  easy: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
-};
+import {
+  loadStudyUi,
+  saveStudyUi,
+  type StudyFilter,
+  type ViewMode,
+} from "@/lib/study-ui";
 
 const STATE_LABEL: Record<CardState, string> = {
   new: "새 카드",
@@ -47,23 +46,30 @@ const STATE_DOT: Record<CardState, string> = {
   mastered: "bg-emerald-400",
 };
 
-type StudyFilter = "all" | "unstudied" | "studied";
 const STUDY_FILTER_LABEL: Record<StudyFilter, string> = {
   all: "전체",
   unstudied: "미학습",
   studied: "학습함",
 };
 
-type ViewMode = "card" | "list";
+/** front 길이에 맞춰 카드 글자 크기를 조절 (한자 1자 ~ 긴 회화 문장까지) */
+function frontSizeClass(text: string): string {
+  const len = Array.from(text).length;
+  if (len <= 2) return "text-6xl";
+  if (len <= 6) return "text-5xl";
+  if (len <= 12) return "text-4xl";
+  if (len <= 20) return "text-3xl";
+  return "text-2xl leading-relaxed";
+}
 
 export interface StudyItem {
   id: string;
   level: StudyLevel;
-  category: string | null; // 표시용 라벨
-  front: string; // 크게 보여줄 일본어
-  reading: string; // 읽기
-  meaning: string; // 뜻
-  detail?: string[]; // 추가 정보 줄 (한자 음독/훈독/예시 등)
+  category: string | null;
+  front: string;
+  reading: string;
+  meaning: string;
+  detail?: string[];
 }
 
 interface StudyClientProps {
@@ -81,12 +87,34 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
   const [filterOpen, setFilterOpen] = useState(false);
   const [index, setIndex] = useState(0);
   const [hideMeaning, setHideMeaning] = useState(false);
+  const [hideReading, setHideReading] = useState(false);
+  const [revealMeaning, setRevealMeaning] = useState(false);
+  const [revealReading, setRevealReading] = useState(false);
   const [progress, setProgress] = useState<Record<string, CardProgress>>({});
   const [now] = useState(() => Date.now());
+  const ready = useRef(false);
 
+  // 저장된 UI 상태 복원 + 진도 로드
   useEffect(() => {
+    const saved = loadStudyUi(deck);
+    if (saved) {
+      if (saved.level !== undefined) setLevel(saved.level);
+      if (saved.category !== undefined) setCategory(saved.category);
+      if (saved.studyFilter) setStudyFilter(saved.studyFilter);
+      if (saved.view) setView(saved.view);
+      if (typeof saved.index === "number") setIndex(saved.index);
+      if (typeof saved.hideMeaning === "boolean") setHideMeaning(saved.hideMeaning);
+      if (typeof saved.hideReading === "boolean") setHideReading(saved.hideReading);
+    }
     setProgress(getAllProgress());
+    ready.current = true;
   }, [deck]);
+
+  // 상태 변경 시 저장 (복원 완료 후에만)
+  useEffect(() => {
+    if (!ready.current) return;
+    saveStudyUi(deck, { level, category, studyFilter, view, index, hideMeaning, hideReading });
+  }, [deck, level, category, studyFilter, view, index, hideMeaning, hideReading]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -109,15 +137,8 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
     [items, level, category, studyFilter, progress, deck]
   );
 
-  // 필터가 바뀌면 첫 카드로
-  useEffect(() => {
-    setIndex(0);
-    setHideMeaning(false);
-  }, [level, category, studyFilter]);
-
   const total = filtered.length;
   const current = view === "card" ? filtered[Math.min(index, total - 1)] : undefined;
-
   const studiedTotal = items.filter((it) => progressFor(it.id)).length;
 
   const currentProgress = current
@@ -127,45 +148,64 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
   const activeFilterCount =
     (level !== null ? 1 : 0) + (category !== null ? 1 : 0) + (studyFilter !== "all" ? 1 : 0);
 
+  const resetReveals = () => {
+    setRevealMeaning(false);
+    setRevealReading(false);
+  };
+
+  // 필터 변경 시 처음 카드로 (사용자 조작 시에만 — 복원은 index 유지)
+  const changeLevel = (v: StudyLevel | null) => {
+    setLevel(v);
+    setIndex(0);
+    resetReveals();
+  };
+  const changeCategory = (v: string | null) => {
+    setCategory(v);
+    setIndex(0);
+    resetReveals();
+  };
+  const changeStudyFilter = (v: StudyFilter) => {
+    setStudyFilter(v);
+    setIndex(0);
+    resetReveals();
+  };
   const resetFilters = () => {
     setLevel(null);
     setCategory(null);
     setStudyFilter("all");
+    setIndex(0);
+    resetReveals();
   };
 
   const go = (delta: number) => {
-    setIndex((i) => {
-      const next = i + delta;
-      if (next < 0) return 0;
-      if (next >= total) return total - 1;
-      return next;
-    });
-    setHideMeaning(false);
+    setIndex((i) => Math.min(Math.max(i + delta, 0), total - 1));
+    resetReveals();
   };
 
   const handleGrade = (grade: Grade) => {
     if (!current) return;
     const updated = gradeCard(deck, current.id, grade);
     setProgress((prev) => ({ ...prev, [updated.id]: updated }));
-    setHideMeaning(false);
+    resetReveals();
     if (studyFilter === "unstudied") {
-      // 채점한 항목이 '미학습' 목록에서 빠지므로 같은 index가 곧 다음 항목이 됨.
-      // 다만 마지막 항목이었으면 줄어든 목록 끝으로 index를 당겨준다.
       setIndex((i) => Math.max(0, Math.min(i, total - 2)));
     } else if (index < total - 1) {
-      go(1);
+      setIndex((i) => i + 1);
     }
   };
 
   const openCardAt = (i: number) => {
     setIndex(i);
-    setHideMeaning(false);
+    resetReveals();
     setView("card");
   };
 
+  const meaningHidden = hideMeaning && !revealMeaning;
+  const readingHidden = hideReading && !revealReading;
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-6 py-10 dark:from-slate-950 dark:to-slate-900">
-      <div className="mx-auto max-w-lg">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 px-4 py-8 dark:from-slate-950 dark:to-slate-900 sm:px-6">
+      <div className="mx-auto max-w-2xl">
         {/* 헤더 */}
         <div className="mb-4 flex items-center justify-between">
           <Link href="/" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
@@ -185,7 +225,7 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
           </p>
         </header>
 
-        {/* 컨트롤 바: 필터 버튼 + 뷰 토글 */}
+        {/* 컨트롤 바 */}
         <div className="mb-2 flex items-center justify-between gap-2">
           <button
             type="button"
@@ -218,19 +258,19 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
           </div>
         </div>
 
-        {/* 활성 필터 요약 (제거 가능한 칩) */}
+        {/* 활성 필터 요약 */}
         {activeFilterCount > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
             {level !== null && (
-              <RemovableChip onRemove={() => setLevel(null)}>
+              <RemovableChip onRemove={() => changeLevel(null)}>
                 Lv{level} {STUDY_LEVEL_LABEL[level]}
               </RemovableChip>
             )}
             {category !== null && (
-              <RemovableChip onRemove={() => setCategory(null)}>{category}</RemovableChip>
+              <RemovableChip onRemove={() => changeCategory(null)}>{category}</RemovableChip>
             )}
             {studyFilter !== "all" && (
-              <RemovableChip onRemove={() => setStudyFilter("all")}>
+              <RemovableChip onRemove={() => changeStudyFilter("all")}>
                 {STUDY_FILTER_LABEL[studyFilter]}만
               </RemovableChip>
             )}
@@ -243,6 +283,17 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
             </button>
           </div>
         )}
+
+        {/* 가리기 토글 (카드/리스트 공통) */}
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">가리기</span>
+          <ToggleChip active={hideMeaning} onClick={() => { setHideMeaning((v) => !v); setRevealMeaning(false); }}>
+            뜻
+          </ToggleChip>
+          <ToggleChip active={hideReading} onClick={() => { setHideReading((v) => !v); setRevealReading(false); }}>
+            발음
+          </ToggleChip>
+        </div>
 
         {total === 0 ? (
           <Card className="border-slate-200/80 shadow-sm dark:border-slate-800">
@@ -266,24 +317,33 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
                   <button
                     type="button"
                     onClick={() => openCardAt(i)}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-muted/60"
+                    className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition hover:bg-muted/60"
                   >
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", STATE_DOT[state])} />
+                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", STATE_DOT[state])} />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-2">
-                        <span className="truncate text-base font-semibold">{it.front}</span>
-                        <span className="shrink-0 truncate text-xs text-muted-foreground">
+                      <span className="block truncate text-base font-semibold">{it.front}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        <span className={cn(hideReading && "select-none blur-[3px]")}>
                           {it.reading}
                         </span>
+                        {it.reading !== it.meaning && (
+                          <>
+                            {" · "}
+                            <span className={cn(hideMeaning && "select-none blur-[3px]")}>
+                              {it.meaning}
+                            </span>
+                          </>
+                        )}
                       </span>
-                      <span className="truncate text-sm text-muted-foreground">{it.meaning}</span>
                     </span>
                     {p?.isLeech && (
-                      <span className="shrink-0 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+                      <span className="shrink-0 self-center rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
                         약점
                       </span>
                     )}
-                    <span className="shrink-0 text-[10px] text-muted-foreground">Lv{it.level}</span>
+                    <span className="shrink-0 self-center text-[10px] text-muted-foreground">
+                      Lv{it.level}
+                    </span>
                   </button>
                 </li>
               );
@@ -305,45 +365,61 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
             </div>
 
             <Card className="border-slate-200/80 shadow-sm dark:border-slate-800">
-              <CardHeader className="items-center gap-1">
+              <CardHeader className="items-center gap-2 pt-8">
                 {current.category && (
                   <span className="text-xs text-muted-foreground">
                     Lv{current.level} · {current.category}
                   </span>
                 )}
-                <CardTitle className="break-keep text-center text-4xl font-bold tracking-wide">
+                <CardTitle
+                  className={cn(
+                    "break-keep py-2 text-center font-bold tracking-wide",
+                    frontSizeClass(current.front)
+                  )}
+                >
                   {current.front}
                 </CardTitle>
-                <CardDescription className="text-center text-base">
-                  {current.reading}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div
+                <button
+                  type="button"
+                  onClick={() => hideReading && setRevealReading((v) => !v)}
                   className={cn(
-                    "rounded-lg border bg-muted/40 px-4 py-3 text-center text-lg font-medium transition",
-                    hideMeaning && "select-none blur-sm"
+                    "text-center text-lg text-muted-foreground transition",
+                    readingHidden && "select-none blur-sm",
+                    hideReading && "cursor-pointer"
+                  )}
+                >
+                  {current.reading}
+                </button>
+              </CardHeader>
+              <CardContent className="space-y-4 pb-8">
+                <button
+                  type="button"
+                  onClick={() => hideMeaning && setRevealMeaning((v) => !v)}
+                  className={cn(
+                    "w-full rounded-lg border bg-muted/40 px-4 py-4 text-center text-xl font-medium transition",
+                    meaningHidden && "select-none blur-sm",
+                    hideMeaning && "cursor-pointer"
                   )}
                 >
                   {current.meaning}
-                </div>
+                </button>
 
                 {current.detail && current.detail.length > 0 && (
                   <ul
                     className={cn(
                       "space-y-1 text-sm text-muted-foreground transition",
-                      hideMeaning && "select-none blur-sm"
+                      meaningHidden && "select-none blur-sm"
                     )}
                   >
                     {current.detail.map((d, i) => (
-                      <li key={i} className="break-keep">
+                      <li key={i} className="break-keep text-center">
                         {d}
                       </li>
                     ))}
                   </ul>
                 )}
 
-                {currentProgress && progressFor(current.id) && (
+                {currentProgress && progressFor(current.id) && (currentProgress.isLeech || currentProgress.lastGrade) && (
                   <p className="text-center text-xs font-medium text-muted-foreground">
                     {currentProgress.isLeech && "⚠ 약점 · "}
                     {currentProgress.lastGrade &&
@@ -351,51 +427,37 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
                   </p>
                 )}
 
-                <div className="flex justify-center pt-1">
-                  <Button variant="ghost" size="sm" onClick={() => setHideMeaning((v) => !v)}>
-                    {hideMeaning ? "뜻 보이기" : "뜻 가리기 (스스로 테스트)"}
-                  </Button>
+                {/* 채점 (색 없이 작게) */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {GRADE_ORDER.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => handleGrade(g)}
+                      className="flex flex-col items-center gap-0.5 rounded-md border border-border bg-background py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <span>{GRADE_LABEL[g]}</span>
+                      {currentProgress && (
+                        <span className="text-[10px] opacity-60">
+                          {previewInterval(currentProgress, g, now)}
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
 
-                {/* 4버튼 자가채점 → SRS 등록 */}
-                <div>
-                  <p className="mb-1.5 text-center text-sm text-muted-foreground">
-                    떠올린 만큼 스스로 채점하면 복습 일정이 잡혀요
-                  </p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {GRADE_ORDER.map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => handleGrade(g)}
-                        className={cn(
-                          "flex flex-col items-center gap-0.5 rounded-lg border px-1 py-2 text-sm font-medium transition",
-                          GRADE_STYLE[g]
-                        )}
-                      >
-                        <span>{GRADE_LABEL[g]}</span>
-                        {currentProgress && (
-                          <span className="text-[10px] opacity-70">
-                            {previewInterval(currentProgress, g, now)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
+                {/* 이전 / 다음 (CTA) */}
+                <div className="flex gap-3 pt-1">
                   <Button
                     variant="outline"
-                    className="flex-1"
+                    className="h-14 flex-1 text-base"
                     onClick={() => go(-1)}
                     disabled={index === 0}
                   >
                     ← 이전
                   </Button>
                   <Button
-                    variant="outline"
-                    className="flex-1"
+                    className="h-14 flex-1 text-base"
                     onClick={() => go(1)}
                     disabled={index >= total - 1}
                   >
@@ -411,11 +473,11 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
       {/* ===== 필터 바텀시트 ===== */}
       <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)} title="필터">
         <FilterGroup label="레벨">
-          <FilterChip active={level === null} onClick={() => setLevel(null)}>
+          <FilterChip active={level === null} onClick={() => changeLevel(null)}>
             전체
           </FilterChip>
           {STUDY_LEVELS.map((lv) => (
-            <FilterChip key={lv} active={level === lv} onClick={() => setLevel(lv)}>
+            <FilterChip key={lv} active={level === lv} onClick={() => changeLevel(lv)}>
               Lv{lv} {STUDY_LEVEL_LABEL[lv]}
             </FilterChip>
           ))}
@@ -423,7 +485,7 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
 
         <FilterGroup label="학습 상태">
           {(Object.keys(STUDY_FILTER_LABEL) as StudyFilter[]).map((f) => (
-            <FilterChip key={f} active={studyFilter === f} onClick={() => setStudyFilter(f)}>
+            <FilterChip key={f} active={studyFilter === f} onClick={() => changeStudyFilter(f)}>
               {STUDY_FILTER_LABEL[f]}
             </FilterChip>
           ))}
@@ -431,11 +493,11 @@ export default function StudyClient({ deck, title, items, testHref }: StudyClien
 
         {categories.length > 0 && (
           <FilterGroup label="분류">
-            <FilterChip active={category === null} onClick={() => setCategory(null)}>
+            <FilterChip active={category === null} onClick={() => changeCategory(null)}>
               전체
             </FilterChip>
             {categories.map((c) => (
-              <FilterChip key={c} active={category === c} onClick={() => setCategory(c)}>
+              <FilterChip key={c} active={category === c} onClick={() => changeCategory(c)}>
                 {c}
               </FilterChip>
             ))}
@@ -473,6 +535,31 @@ function ViewToggle({
       className={cn(
         "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-medium transition",
         active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToggleChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-2.5 py-1 text-xs font-medium transition",
+        active
+          ? "border-foreground/30 bg-foreground/10 text-foreground"
+          : "border-border bg-background text-muted-foreground hover:bg-muted"
       )}
     >
       {children}
@@ -564,12 +651,10 @@ function FilterSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-in fade-in"
         onClick={onClose}
       />
-      {/* panel */}
       <div
         role="dialog"
         aria-modal="true"
